@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Sala privada para compartilhar tela e áudio com um amigo." />
+    <meta name="theme-color" content="#0b0d12" />
+    <title>Lume — compartilhar tela e áudio</title>
+    <link rel="preconnect" href="https://unpkg.com" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+    <script defer src="./app.js"></script>
+  </head>
+  <body>
+    <svg aria-hidden="true" class="svg-sprite">
+      <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v7a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0M12 17v4m-4 0h8"/></symbol>
+      <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Zm4 4a4 4 0 0 1 0 6m2-8a7 7 0 0 1 0 10"/></symbol>
+      <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m4-12-4-3-4 3m4-3v7"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1"/></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm13 10v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.2 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.3 1.73.5 2.63.62A2 2 0 0 1 22 16.9Z"/></symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.4 4.6L18 9l-4.6 1.4L12 15l-1.4-4.6L6 9l4.6-1.4L12 3Zm6 11 .8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14Z"/></symbol>
+    </svg>
+
+    <main class="app-shell" id="appShell" aria-hidden="true">
+      <aside class="server-rail" aria-label="Servidores">
+        <div class="brand-mark" aria-label="Lume"><span></span><span></span></div>
+        <div class="rail-separator"></div>
+        <button class="server-icon active" aria-label="Sala de amigos">LA</button>
+        <button class="server-icon add" aria-label="Adicionar sala">+</button>
+        <div class="rail-spacer"></div>
+        <div class="avatar tiny" id="railAvatar">V</div>
+      </aside>
+
+      <aside class="channel-sidebar">
+        <div class="workspace-name"><span>LUME / AMIGOS</span><span class="chevron">⌄</span></div>
+        <nav class="channels" aria-label="Canais">
+          <p class="channel-heading"><span>CANAIS DE VOZ</span><button aria-label="Criar canal">+</button></p>
+          <button class="channel active"><span class="hash">◉</span><span>tela-compartilhada</span><span class="live-pill">AO VIVO</span></button>
+          <div class="voice-users">
+            <div class="voice-user"><div class="avatar small" id="sidebarAvatar">V</div><span id="sidebarName">Você</span></div>
+            <div class="voice-user muted" id="sidebarFriend"><div class="avatar small friend">?</div><span>Aguardando...</span></div>
+          </div>
+        </nav>
+        <div class="voice-card">
+          <div class="signal"><span></span> VOZ CONECTADA</div>
+          <strong id="roomLabel">Sala privada</strong>
+          <small>Conexão direta e criptografada</small>
+          <button id="sidebarInvite" class="text-action"><svg><use href="#i-link"/></svg> Convidar amigo</button>
+        </div>
+        <div class="user-panel">
+          <div class="avatar" id="userAvatar">V</div>
+          <div class="user-copy"><strong id="userName">Você</strong><span id="userState">conectando</span></div>
+          <button class="icon-button compact" id="sidebarMic" aria-label="Alternar microfone"><svg><use href="#i-mic"/></svg></button>
+        </div>
+      </aside>
+
+      <section class="stage-column">
+        <header class="topbar">
+          <div class="room-title"><span class="room-icon">◉</span><strong>tela-compartilhada</strong><span class="divider"></span><span class="top-status" id="topStatus">Preparando sala…</span></div>
+          <button class="member-toggle" id="memberToggle" aria-label="Mostrar participantes"><svg><use href="#i-users"/></svg></button>
+        </header>
+
+        <div class="stage" id="stage">
+          <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+          <div class="empty-stage" id="emptyStage">
+            <div class="empty-orbit"><span class="orbit-dot"></span><svg><use href="#i-screen"/></svg></div>
+            <h1>Sua sala está pronta</h1>
+            <p>Convide seu amigo e compartilhe uma janela, uma aba ou a tela inteira.</p>
+            <div class="room-code-card">
+              <span>CÓDIGO DA SALA</span>
+              <strong id="roomCode">••••••</strong>
+              <button id="copyCode">Copiar</button>
+            </div>
+          </div>
+
+          <div class="video-grid hidden" id="videoGrid">
+            <article class="video-tile remote-tile">
+              <video id="remoteVideo" autoplay playsinline></video>
+              <div class="tile-placeholder" id="remotePlaceholder"><div class="avatar hero friend">?</div><p id="remoteWaitingText">Aguardando transmissão</p></div>
+              <div class="tile-label"><span class="speaking-dot"></span><span id="remoteLabel">Seu amigo</span></div>
+            </article>
+            <article class="video-tile local-tile" id="localTile">
+              <video id="localVideo" autoplay muted playsinline></video>
+              <div class="tile-placeholder" id="localPlaceholder"><div class="avatar hero" id="localAvatar">V</div><p>Você</p></div>
+              <div class="tile-label"><span>Você</span><span class="muted-badge hidden" id="localMutedBadge">sem áudio</span></div>
+            </article>
+          </div>
+
+          <div class="stage-controls" id="stageControls">
+            <button class="control-button" id="micButton" aria-label="Alternar microfone" aria-pressed="false"><svg><use href="#i-mic"/></svg><span class="control-tip">Microfone</span></button>
+            <button class="control-button" id="deafenButton" aria-label="Alternar áudio recebido" aria-pressed="false"><svg><use href="#i-volume"/></svg><span class="control-tip">Áudio</span></button>
+            <button class="share-button" id="shareButton"><svg><use href="#i-screen"/></svg><span>Compartilhar tela</span></button>
+            <button class="control-button invite-control" id="inviteButton" aria-label="Copiar convite"><svg><use href="#i-link"/></svg><span class="control-tip">Convidar</span></button>
+            <button class="control-button danger" id="leaveButton" aria-label="Sair da chamada"><svg><use href="#i-phone"/></svg><span class="control-tip">Sair</span></button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="member-list" id="memberList">
+        <div class="member-head"><span>NA SALA — <b id="memberCount">1</b></span><button id="closeMembers" aria-label="Fechar participantes">×</button></div>
+        <p class="member-group">CONECTADOS</p>
+        <div class="member"><div class="avatar" id="memberAvatar">V</div><div><strong id="memberName">Você</strong><span><i></i> transmitindo</span></div></div>
+        <div class="member muted" id="friendMember"><div class="avatar friend">?</div><div><strong>Seu amigo</strong><span>aguardando conexão</span></div></div>
+        <div class="privacy-note"><svg><use href="#i-spark"/></svg><div><strong>Só vocês dois</strong><p>O áudio e a tela viajam diretamente entre os participantes.</p></div></div>
+      </aside>
+    </main>
+
+    <section class="lobby" id="lobby" aria-labelledby="lobbyTitle">
+      <div class="lobby-glow"></div>
+      <div class="lobby-brand"><div class="brand-mark large"><span></span><span></span></div><span>LUME</span></div>
+      <div class="lobby-card">
+        <div class="eyebrow"><span></span> CHAMADA PONTO A PONTO</div>
+        <h1 id="lobbyTitle">Compartilhe o que importa.<br><em>Só com quem você quiser.</em></h1>
+        <p class="lobby-intro">Tela e áudio em uma sala privada para duas pessoas. Sem cadastro, sem instalar nada.</p>
+        <label class="field-label" for="displayName">COMO DEVEMOS TE CHAMAR?</label>
+        <input id="displayName" class="text-input" maxlength="24" placeholder="Seu nome" autocomplete="nickname" />
+        <div class="choice-grid">
+          <button class="choice-card selected" id="createChoice">
+            <span class="choice-icon create"><svg><use href="#i-spark"/></svg></span>
+            <span><strong>Criar uma sala</strong><small>Gere um código para seu amigo</small></span>
+            <span class="radio-dot"></span>
+          </button>
+          <button class="choice-card" id="joinChoice">
+            <span class="choice-icon join"><svg><use href="#i-link"/></svg></span>
+            <span><strong>Entrar com código</strong><small>Use o convite que você recebeu</small></span>
+            <span class="radio-dot"></span>
+          </button>
+        </div>
+        <div class="join-field hidden" id="joinField">
+          <label class="field-label" for="joinCode">CÓDIGO DA SALA</label>
+          <input id="joinCode" class="text-input code-input" maxlength="8" placeholder="ABC123" autocomplete="off" />
+        </div>
+        <button class="primary-button" id="startButton">Criar sala <span>→</span></button>
+        <p class="permission-note"><svg><use href="#i-mic"/></svg> Seu navegador pedirá permissão para usar o microfone.</p>
+        <p class="lobby-error hidden" id="lobbyError" role="alert"></p>
+      </div>
+      <div class="lobby-footer"><span>Feito para conversas simples</span><span class="footer-line"></span><span>Privado por padrão</span></div>
+    </section>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="connection-banner hidden" id="connectionBanner" role="alert"></div>
+  </body>
+</html>
