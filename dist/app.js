@@ -6,7 +6,9 @@
     lobby: $("lobby"), app: $("appShell"), name: $("displayName"), createChoice: $("createChoice"), joinChoice: $("joinChoice"),
     joinField: $("joinField"), joinCode: $("joinCode"), start: $("startButton"), error: $("lobbyError"), roomCode: $("roomCode"),
     roomLabel: $("roomLabel"), topStatus: $("topStatus"), userState: $("userState"), emptyStage: $("emptyStage"), videoGrid: $("videoGrid"),
-    remoteVideo: $("remoteVideo"), localVideo: $("localVideo"), remotePlaceholder: $("remotePlaceholder"), localPlaceholder: $("localPlaceholder"),
+    remoteVideo: $("remoteVideo"), remoteTile: $("remoteTile"), localVideo: $("localVideo"), remotePlaceholder: $("remotePlaceholder"), localPlaceholder: $("localPlaceholder"),
+    receiveVolume: $("receiveVolume"), fullscreen: $("fullscreenButton"), enableAudio: $("enableAudioButton"), remoteAudioNote: $("remoteAudioNote"),
+    screenAudioPanel: $("screenAudioPanel"), screenVolume: $("screenVolume"), screenVolumeValue: $("screenVolumeValue"), screenAudioHelp: $("screenAudioHelp"),
     mic: $("micButton"), sideMic: $("sidebarMic"), deafen: $("deafenButton"), share: $("shareButton"), leave: $("leaveButton"),
     copyCode: $("copyCode"), invite: $("inviteButton"), sidebarInvite: $("sidebarInvite"), toast: $("toast"), banner: $("connectionBanner"),
     sidebarFriend: $("sidebarFriend"), friendMember: $("friendMember"), memberCount: $("memberCount"), remoteLabel: $("remoteLabel"),
@@ -15,7 +17,8 @@
 
   const state = {
     mode: "create", name: "Você", code: "", peer: null, call: null, data: null, localStream: null,
-    micStream: null, placeholderTrack: null, displayStream: null, mixedAudioTrack: null, audioContext: null,
+    micStream: null, placeholderTrack: null, displayStream: null, audioContext: null, audioDestination: null,
+    micGain: null, micSource: null, screenGain: null, screenSources: [], screenAudioAvailable: false,
     muted: false, deafened: false, connected: false, sharing: false, toastTimer: null
   };
 
@@ -70,10 +73,24 @@
   }
 
   async function prepareMedia() {
-    if (!navigator.mediaDevices?.getUserMedia || !window.Peer) throw new Error("Seu navegador não oferece os recursos necessários para esta chamada.");
+    if (!navigator.mediaDevices?.getUserMedia || !window.Peer || !window.AudioContext) throw new Error("Seu navegador não oferece os recursos necessários para esta chamada.");
     await getMicrophone();
+    state.audioContext = new AudioContext();
+    state.audioDestination = state.audioContext.createMediaStreamDestination();
+    state.micGain = state.audioContext.createGain();
+    state.screenGain = state.audioContext.createGain();
+    state.micGain.connect(state.audioDestination);
+    state.screenGain.connect(state.audioDestination);
+    const micTrack = state.micStream.getAudioTracks()[0];
+    if (micTrack) {
+      state.micSource = state.audioContext.createMediaStreamSource(new MediaStream([micTrack]));
+      state.micSource.connect(state.micGain);
+    }
+    // A faixa de saída existe antes da chamada, mesmo se o microfone for recusado.
+    // Assim o áudio da tela pode começar depois sem renegociar a conexão WebRTC.
+    state.audioContext.resume().catch(() => {});
     state.placeholderTrack = makePlaceholderTrack();
-    state.localStream = new MediaStream([state.placeholderTrack, ...state.micStream.getAudioTracks()]);
+    state.localStream = new MediaStream([state.placeholderTrack, state.audioDestination.stream.getAudioTracks()[0]]);
   }
 
   function updateIdentity() {
@@ -144,11 +161,11 @@
   function attachData(connection) {
     state.data = connection;
     connection.on("open", () => {
-      connection.send({ type: "profile", name: state.name, sharing: state.sharing });
+      connection.send({ type: "profile", name: state.name, sharing: state.sharing, screenAudio: state.screenAudioAvailable });
     });
     connection.on("data", (message) => {
-      if (message?.type === "profile") { updateRemoteName(message.name || "Seu amigo"); setRemoteSharing(Boolean(message.sharing)); }
-      if (message?.type === "sharing") setRemoteSharing(Boolean(message.active));
+      if (message?.type === "profile") { updateRemoteName(message.name || "Seu amigo"); setRemoteSharing(Boolean(message.sharing), Boolean(message.screenAudio)); }
+      if (message?.type === "sharing") setRemoteSharing(Boolean(message.active), Boolean(message.screenAudio));
       if (message?.type === "muted") showToast(message.active ? "Seu amigo silenciou o microfone" : "Microfone do seu amigo ativado");
     });
   }
@@ -157,7 +174,7 @@
     call.on("stream", (stream) => {
       state.connected = true;
       els.remoteVideo.srcObject = stream;
-      els.remoteVideo.play().catch(() => {});
+      playRemote();
       els.emptyStage.classList.add("hidden"); els.videoGrid.classList.remove("hidden");
       els.sidebarFriend.classList.remove("muted"); els.friendMember.classList.remove("muted");
       els.memberCount.textContent = "2"; setStatus("2 pessoas na sala", "online");
@@ -172,48 +189,83 @@
     document.querySelectorAll(".avatar.friend").forEach((avatar) => avatar.textContent = initial(name));
   }
 
-  function setRemoteSharing(active) {
+  function playRemote() {
+    els.remoteVideo.play().then(() => els.enableAudio.classList.add("hidden")).catch(() => {
+      if (!state.deafened) els.enableAudio.classList.remove("hidden");
+    });
+  }
+
+  function setRemoteSharing(active, hasScreenAudio = false) {
     els.remotePlaceholder.classList.toggle("hidden", active);
     els.remoteWaitingText.textContent = active ? "Compartilhando tela" : "Aguardando transmissão";
+    els.remoteAudioNote.classList.toggle("hidden", !active || hasScreenAudio);
   }
 
   function friendLeft() {
     state.connected = false; state.call = null;
     els.sidebarFriend.classList.add("muted"); els.friendMember.classList.add("muted"); els.memberCount.textContent = "1";
-    els.remotePlaceholder.classList.remove("hidden"); setStatus("Seu amigo saiu da sala", "online"); showToast("Seu amigo saiu");
+    setRemoteSharing(false); els.remoteVideo.srcObject = null; els.enableAudio.classList.add("hidden");
+    setStatus("Seu amigo saiu da sala", "online"); showToast("Seu amigo saiu");
   }
 
   function sender(kind) {
     return state.call?.peerConnection?.getSenders().find((item) => item.track?.kind === kind);
   }
 
-  async function mixAudio(displayStream) {
-    const screenAudio = displayStream.getAudioTracks()[0];
-    const micAudio = state.micStream.getAudioTracks()[0];
-    if (!screenAudio) return micAudio || null;
-    state.audioContext = state.audioContext || new AudioContext();
-    const destination = state.audioContext.createMediaStreamDestination();
-    [micAudio, screenAudio].filter(Boolean).forEach((track) => state.audioContext.createMediaStreamSource(new MediaStream([track])).connect(destination));
-    state.mixedAudioTrack = destination.stream.getAudioTracks()[0];
-    state.mixedAudioTrack.enabled = !state.muted;
-    return state.mixedAudioTrack;
+  function connectScreenAudio(displayStream) {
+    disconnectScreenAudio();
+    const tracks = displayStream.getAudioTracks();
+    state.screenAudioAvailable = tracks.length > 0;
+    tracks.forEach((track) => {
+      const source = state.audioContext.createMediaStreamSource(new MediaStream([track]));
+      source.connect(state.screenGain);
+      state.screenSources.push(source);
+      track.addEventListener("ended", () => {
+        if (state.displayStream !== displayStream || !state.sharing) return;
+        const stillActive = displayStream.getAudioTracks().some((item) => item.readyState === "live");
+        if (stillActive) return;
+        state.screenAudioAvailable = false;
+        els.screenAudioPanel.classList.add("no-audio"); els.screenVolume.disabled = true;
+        els.screenAudioHelp.textContent = "Áudio da tela interrompido. Pare e compartilhe novamente com áudio.";
+        state.data?.send({ type: "sharing", active: true, screenAudio: false });
+      }, { once: true });
+    });
+    els.screenAudioPanel.classList.toggle("no-audio", !state.screenAudioAvailable);
+    els.screenVolume.disabled = !state.screenAudioAvailable;
+    els.screenAudioHelp.textContent = state.screenAudioAvailable
+      ? "Som do computador sendo enviado."
+      : "Sem som da tela. Compartilhe uma aba e marque “Compartilhar áudio”.";
+  }
+
+  function disconnectScreenAudio() {
+    state.screenSources.forEach((source) => source.disconnect());
+    state.screenSources = [];
+    state.screenAudioAvailable = false;
   }
 
   async function startSharing() {
     if (!state.call) { showToast("Espere seu amigo entrar para compartilhar"); return; }
+    let display;
     try {
-      const display = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 30 } }, audio: true });
-      state.displayStream = display;
+      state.audioContext.resume().catch(() => {});
+      display = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30, max: 30 } }, audio: true,
+        systemAudio: "include", windowAudio: "system"
+      });
       const videoTrack = display.getVideoTracks()[0];
-      const audioTrack = await mixAudio(display);
-      await sender("video")?.replaceTrack(videoTrack);
-      if (audioTrack && sender("audio")) await sender("audio").replaceTrack(audioTrack);
+      const videoSender = sender("video");
+      if (!videoTrack || !videoSender) throw new Error("Faixa de vídeo indisponível");
+      await videoSender.replaceTrack(videoTrack);
+      state.displayStream = display;
+      connectScreenAudio(display);
       els.localVideo.srcObject = display; els.localVideo.play().catch(() => {}); els.localPlaceholder.classList.add("hidden");
       state.sharing = true; els.share.classList.add("active"); els.share.querySelector("span").textContent = "Parar transmissão";
-      state.data?.send({ type: "sharing", active: true });
-      videoTrack.addEventListener("ended", stopSharing, { once: true });
-      showToast("Sua tela está ao vivo");
+      els.screenAudioPanel.classList.remove("hidden");
+      state.data?.send({ type: "sharing", active: true, screenAudio: state.screenAudioAvailable });
+      videoTrack.addEventListener("ended", () => { void stopSharing(); }, { once: true });
+      showToast(state.screenAudioAvailable ? "Tela e som ao vivo" : "Tela ao vivo, mas sem áudio capturado");
     } catch (error) {
+      display?.getTracks().forEach((track) => track.stop());
       if (error.name !== "NotAllowedError") showToast("Não foi possível compartilhar esta tela");
     }
   }
@@ -221,26 +273,62 @@
   async function stopSharing() {
     if (!state.sharing) return;
     const stream = state.displayStream; state.displayStream = null; state.sharing = false;
-    await sender("video")?.replaceTrack(state.placeholderTrack);
-    const micAudio = state.micStream.getAudioTracks()[0]; if (sender("audio") && micAudio) await sender("audio").replaceTrack(micAudio);
-    stream?.getTracks().forEach((track) => track.stop()); state.mixedAudioTrack?.stop(); state.mixedAudioTrack = null;
+    try { await sender("video")?.replaceTrack(state.placeholderTrack); } catch {}
+    disconnectScreenAudio(); stream?.getTracks().forEach((track) => track.stop());
     els.localVideo.srcObject = null; els.localPlaceholder.classList.remove("hidden");
-    els.share.classList.remove("active"); els.share.querySelector("span").textContent = "Compartilhar tela";
-    state.data?.send({ type: "sharing", active: false }); showToast("Compartilhamento encerrado");
+    els.screenAudioPanel.classList.add("hidden");
+    els.share.classList.remove("active"); els.share.querySelector("span").textContent = "Compartilhar tela e som";
+    state.data?.send({ type: "sharing", active: false, screenAudio: false }); showToast("Compartilhamento encerrado");
   }
 
   function toggleMic() {
     state.muted = !state.muted;
     state.micStream?.getAudioTracks().forEach((track) => track.enabled = !state.muted);
-    if (state.mixedAudioTrack) state.mixedAudioTrack.enabled = !state.muted;
+    if (state.micGain) state.micGain.gain.value = state.muted ? 0 : 1;
+    state.audioContext?.resume().catch(() => {});
     [els.mic, els.sideMic].forEach((button) => button?.setAttribute("aria-pressed", String(state.muted)));
     $("localMutedBadge").classList.toggle("hidden", !state.muted);
     state.data?.send({ type: "muted", active: state.muted }); showToast(state.muted ? "Microfone desligado" : "Microfone ligado");
   }
 
   function toggleDeafen() {
-    state.deafened = !state.deafened; els.remoteVideo.muted = state.deafened;
+    state.deafened = !state.deafened; els.remoteVideo.muted = state.deafened || Number(els.receiveVolume.value) === 0;
+    if (!state.deafened) playRemote();
     els.deafen.setAttribute("aria-pressed", String(state.deafened)); showToast(state.deafened ? "Áudio recebido desligado" : "Áudio recebido ligado");
+  }
+
+  function setScreenVolume() {
+    const volume = Number(els.screenVolume.value);
+    state.screenGain.gain.value = volume / 100;
+    els.screenVolumeValue.textContent = `${volume}%`;
+  }
+
+  function setReceiveVolume() {
+    const volume = Number(els.receiveVolume.value);
+    els.remoteVideo.volume = volume / 100;
+    els.remoteVideo.muted = state.deafened || volume === 0;
+  }
+
+  function updateFullscreenButton() {
+    const active = document.fullscreenElement === els.remoteTile || els.remoteTile.classList.contains("expanded");
+    els.fullscreen.setAttribute("aria-label", active ? "Sair da tela cheia" : "Ver transmissão em tela cheia");
+    els.fullscreen.title = active ? "Sair da tela cheia" : "Tela cheia";
+  }
+
+  async function toggleFullscreen() {
+    if (document.fullscreenElement === els.remoteTile) {
+      await document.exitFullscreen();
+    } else if (els.remoteTile.classList.contains("expanded")) {
+      els.remoteTile.classList.remove("expanded"); document.body.classList.remove("theater-open");
+    } else {
+      try {
+        if (!els.remoteTile.requestFullscreen) throw new Error("Indisponível");
+        await els.remoteTile.requestFullscreen();
+      } catch {
+        els.remoteTile.classList.add("expanded"); document.body.classList.add("theater-open");
+      }
+    }
+    updateFullscreenButton();
   }
 
   async function copyInvite() {
@@ -252,6 +340,7 @@
   function leave() {
     state.displayStream?.getTracks().forEach((track) => track.stop()); state.localStream?.getTracks().forEach((track) => track.stop());
     state.micStream?.getTracks().forEach((track) => track.stop()); state.call?.close(); state.data?.close(); state.peer?.destroy();
+    state.audioContext?.close().catch(() => {});
     history.replaceState(null, "", location.pathname); location.reload();
   }
 
@@ -269,10 +358,25 @@
   els.start.addEventListener("click", launch);
   [els.name, els.joinCode].forEach((input) => input.addEventListener("keydown", (event) => { if (event.key === "Enter") launch(); }));
   els.mic.addEventListener("click", toggleMic); els.sideMic.addEventListener("click", toggleMic); els.deafen.addEventListener("click", toggleDeafen);
+  els.screenVolume.addEventListener("input", setScreenVolume);
+  els.receiveVolume.addEventListener("input", setReceiveVolume);
+  els.receiveVolume.addEventListener("change", () => { if (Number(els.receiveVolume.value) > 0) playRemote(); });
+  els.enableAudio.addEventListener("click", () => {
+    state.deafened = false; els.deafen.setAttribute("aria-pressed", "false");
+    if (Number(els.receiveVolume.value) === 0) els.receiveVolume.value = "100";
+    setReceiveVolume(); playRemote();
+  });
+  els.fullscreen.addEventListener("click", toggleFullscreen);
+  document.addEventListener("fullscreenchange", updateFullscreenButton);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && els.remoteTile.classList.contains("expanded")) {
+      els.remoteTile.classList.remove("expanded"); document.body.classList.remove("theater-open"); updateFullscreenButton();
+    }
+  });
   els.share.addEventListener("click", () => state.sharing ? stopSharing() : startSharing()); els.leave.addEventListener("click", leave);
   [els.copyCode, els.invite, els.sidebarInvite].forEach((button) => button.addEventListener("click", copyInvite));
   els.memberToggle.addEventListener("click", () => els.memberList.classList.add("open")); els.closeMembers.addEventListener("click", () => els.memberList.classList.remove("open"));
-  window.addEventListener("beforeunload", () => { state.displayStream?.getTracks().forEach((track) => track.stop()); state.peer?.destroy(); });
+  window.addEventListener("beforeunload", () => { state.displayStream?.getTracks().forEach((track) => track.stop()); state.peer?.destroy(); state.audioContext?.close().catch(() => {}); });
 
   const roomFromUrl = sanitizeCode(new URLSearchParams(location.search).get("room") || "");
   if (roomFromUrl) { setMode("join"); els.joinCode.value = roomFromUrl; }

@@ -15,6 +15,7 @@
     <svg aria-hidden="true" class="svg-sprite">
       <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v7a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0M12 17v4m-4 0h8"/></symbol>
       <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Zm4 4a4 4 0 0 1 0 6m2-8a7 7 0 0 1 0 10"/></symbol>
+      <symbol id="i-fullscreen" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></symbol>
       <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m4-12-4-3-4 3m4-3v7"/></symbol>
       <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1"/></symbol>
       <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm13 10v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
@@ -75,22 +76,33 @@
           </div>
 
           <div class="video-grid hidden" id="videoGrid">
-            <article class="video-tile remote-tile">
+            <article class="video-tile remote-tile" id="remoteTile">
               <video id="remoteVideo" autoplay playsinline></video>
               <div class="tile-placeholder" id="remotePlaceholder"><div class="avatar hero friend">?</div><p id="remoteWaitingText">Aguardando transmissão</p></div>
               <div class="tile-label"><span class="speaking-dot"></span><span id="remoteLabel">Seu amigo</span></div>
+              <div class="remote-toolbar">
+                <label class="volume-control" for="receiveVolume"><svg><use href="#i-volume"/></svg><span class="sr-only">Volume recebido</span><input id="receiveVolume" type="range" min="0" max="100" value="100" aria-label="Volume recebido" /></label>
+                <button class="tile-icon-button" id="fullscreenButton" aria-label="Ver transmissão em tela cheia" title="Tela cheia"><svg><use href="#i-fullscreen"/></svg></button>
+              </div>
+              <button class="enable-audio hidden" id="enableAudioButton"><svg><use href="#i-volume"/></svg> Ativar som</button>
+              <div class="remote-audio-note hidden" id="remoteAudioNote">Seu amigo está compartilhando sem áudio da tela.</div>
             </article>
             <article class="video-tile local-tile" id="localTile">
               <video id="localVideo" autoplay muted playsinline></video>
               <div class="tile-placeholder" id="localPlaceholder"><div class="avatar hero" id="localAvatar">V</div><p>Você</p></div>
-              <div class="tile-label"><span>Você</span><span class="muted-badge hidden" id="localMutedBadge">sem áudio</span></div>
+              <div class="tile-label"><span>Você</span><span class="muted-badge hidden" id="localMutedBadge">mic desligado</span></div>
+              <div class="screen-audio-panel hidden" id="screenAudioPanel">
+                <label for="screenVolume"><svg><use href="#i-volume"/></svg> Som da sua transmissão <strong id="screenVolumeValue">100%</strong></label>
+                <input id="screenVolume" type="range" min="0" max="100" value="100" aria-label="Volume enviado da tela" />
+                <p id="screenAudioHelp">Som do computador sendo enviado.</p>
+              </div>
             </article>
           </div>
 
           <div class="stage-controls" id="stageControls">
             <button class="control-button" id="micButton" aria-label="Alternar microfone" aria-pressed="false"><svg><use href="#i-mic"/></svg><span class="control-tip">Microfone</span></button>
             <button class="control-button" id="deafenButton" aria-label="Alternar áudio recebido" aria-pressed="false"><svg><use href="#i-volume"/></svg><span class="control-tip">Áudio</span></button>
-            <button class="share-button" id="shareButton"><svg><use href="#i-screen"/></svg><span>Compartilhar tela</span></button>
+            <button class="share-button" id="shareButton"><svg><use href="#i-screen"/></svg><span>Compartilhar tela e som</span></button>
             <button class="control-button invite-control" id="inviteButton" aria-label="Copiar convite"><svg><use href="#i-link"/></svg><span class="control-tip">Convidar</span></button>
             <button class="control-button danger" id="leaveButton" aria-label="Sair da chamada"><svg><use href="#i-phone"/></svg><span class="control-tip">Sair</span></button>
           </div>
